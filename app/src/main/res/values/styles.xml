@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <style name="CustomSwitchCompat" parent="Widget.AppCompat.CompoundButton.Switch">
+        <!-- Thumb color selector -->
+        <item name="thumbTint">@color/cardview_light_background</item>
+        <!-- Track color selector -->
+        <item name="trackTint">@drawable/switch_track_selector</item>
+    </style>
+</resources>
