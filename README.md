@@ -10,5 +10,5 @@ This app functions just like a hand-held radar gun; except, instead of radio wav
 
 4. <u>Baseball Detection</u>: As I've alluded to, the baseball detection works by checking for distinct, high frequency signals that are likely caused by doppler shifted waves off the base frequency. Not much to be said here.
 
-5. <u>Doppler Shift Calculations</u>: After finding a (hopefully) valid frequency shift, getting the baseball speed is easy. Below is the equation:
+5. <u>Doppler Shift Calculations</u>: After finding a (hopefully) valid frequency shift, getting the baseball speed is easy: `V = (Δf * c) / (2 * f_base)`
 
