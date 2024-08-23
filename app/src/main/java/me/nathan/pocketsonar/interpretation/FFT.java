@@ -4,26 +4,36 @@ import org.jtransforms.fft.DoubleFFT_1D;
 
 public class FFT {
 
-    public static double[][] extractFrequenciesAndMagnitudes(short[] sampleData, int sampleRate) {
+    public static double[][] extractFrequenciesMagnitudesAndPhases(short[] sampleData, int sampleRate) {
+        // Adjust the FFT size with zero padding
         DoubleFFT_1D fft = new DoubleFFT_1D(sampleData.length + 24 * sampleData.length);
         double[] a = new double[(sampleData.length + 24 * sampleData.length) * 2];
 
+        // Apply the Blackman-Harris window and copy to the FFT input array
         System.arraycopy(applyBlackmanHarrisWindow(sampleData, sampleData.length), 0, a, 0, sampleData.length);
+
+        // Perform the FFT
         fft.realForward(a);
 
-        double[][] vals = new double[2][a.length / 2];
+        // Prepare the output array to hold frequencies, magnitudes, and phases
+        double[][] vals = new double[3][a.length / 2];
 
-        for(int i = 0; i < a.length / 2; ++i) {
-            double re  = a[2*i];
-            double im  = a[2*i+1];
+        // Calculate frequency, magnitude, and phase
+        for (int i = 0; i < a.length / 2; ++i) {
+            double re = a[2 * i];
+            double im = a[2 * i + 1];
             double mag = Math.sqrt(re * re + im * im);
+            double phase = Math.atan2(im, re); // Calculate the phase
 
-            vals[0][i] = (double)sampleRate * i / (a.length / 2);
+            // Use the correct sample rate for calculating frequencies
+            vals[0][i] = (double) sampleRate * i / (a.length / 2);
             vals[1][i] = mag;
+            vals[2][i] = phase; // Store the phase in radians
         }
 
         return vals;
     }
+
 
     public static double[] applyBlackmanHarrisWindow(short[] inputSignal, int windowLength) {
         double[] window = generateBlackmanHarrisWindow(windowLength);

@@ -4,11 +4,11 @@ plugins {
 
 
 android {
-    namespace 'me.nathan.radar'
+    namespace 'me.nathan.pocketsonar'
     compileSdk 34
 
     defaultConfig {
-        applicationId "me.nathan.radar"
+        applicationId "me.nathan.pocketsonar"
         minSdk 24
         targetSdk 34
         versionCode 1

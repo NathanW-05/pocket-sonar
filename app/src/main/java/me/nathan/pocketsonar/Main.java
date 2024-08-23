@@ -34,15 +34,15 @@ import java.lang.ref.WeakReference;
 import me.nathan.pocketsonar.interpretation.Doppler;
 import me.nathan.pocketsonar.sonar.MotionDetector;
 import me.nathan.pocketsonar.sonar.PitchGenerator;
-import me.nathan.radar.R;
 
 public class Main extends AppCompatActivity implements SensorEventListener, LocationListener {
 
     public static Main INSTANCE;
 
     // audio recording config
-    public static final int SAMPLE_RATE = 48000;
-    public static final double BASE_FREQUENCY = 17500;
+    // todo: add support for lower end phone which only support 48,000
+    public static final int SAMPLE_RATE = 96000;
+    public static final int BASE_FREQUENCY = 17500;
     public static final int CHANNEL_CONFIG = AudioFormat.CHANNEL_IN_MONO;
     public static final int AUDIO_FORMAT = AudioFormat.ENCODING_PCM_16BIT;
     public static final int AUDIO_SOURCE = MediaRecorder.AudioSource.MIC;

@@ -2,5 +2,5 @@
 <paths xmlns:android="http://schemas.android.com/apk/res/android">
     <external-path
         name="my_files"
-        path="Android/data/me.nathan.radar/files/" />
+        path="Android/data/me.nathan.pocketsonar/files/" />
 </paths>

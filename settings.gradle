@@ -19,5 +19,5 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "Radar"
+rootProject.name = "pocket-sonar"
 include ':app'

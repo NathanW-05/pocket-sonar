@@ -4,12 +4,14 @@ import android.media.AudioFormat;
 import android.media.AudioManager;
 import android.media.AudioTrack;
 
+import me.nathan.pocketsonar.Main;
+
 public class PitchGenerator {
 
     public static void generateTone(double freqOfTone) {
         Runnable r = () -> {
             double duration = 1; // seconds, we'll loop this to play forever
-            int sampleRate = 48000; // Use a fixed sample rate
+            int sampleRate = Main.SAMPLE_RATE; // Use a fixed sample rate
 
             double dnumSamples = duration * sampleRate;
             dnumSamples = Math.ceil(dnumSamples);
