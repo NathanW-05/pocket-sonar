@@ -30,9 +30,10 @@ import androidx.core.view.ViewCompat;
 import androidx.core.view.WindowInsetsCompat;
 
 import java.lang.ref.WeakReference;
+import java.text.DecimalFormat;
 
 import me.nathan.pocketsonar.interpretation.Doppler;
-import me.nathan.pocketsonar.sonar.MotionDetector;
+import me.nathan.pocketsonar.sonar.DopplerDetector;
 import me.nathan.pocketsonar.sonar.PitchGenerator;
 
 public class Main extends AppCompatActivity implements SensorEventListener, LocationListener {
@@ -40,18 +41,14 @@ public class Main extends AppCompatActivity implements SensorEventListener, Loca
     public static Main INSTANCE;
 
     // audio recording config
-    // todo: add support for lower end phone which only support 48,000
-    public static final int SAMPLE_RATE = 96000;
+    public static final int SAMPLE_RATE = 48000;
     public static final int BASE_FREQUENCY = 17500;
     public static final int CHANNEL_CONFIG = AudioFormat.CHANNEL_IN_MONO;
     public static final int AUDIO_FORMAT = AudioFormat.ENCODING_PCM_16BIT;
     public static final int AUDIO_SOURCE = MediaRecorder.AudioSource.MIC;
     public static final int BUFFER_SIZE = AudioRecord.getMinBufferSize(SAMPLE_RATE, CHANNEL_CONFIG, AUDIO_FORMAT);
 
-    // signal detector config
-    // subject to change by calibration
-    public static double MIN_BASEBALL_MAGNITUDE = 500;
-
+    // sensors
     private LocationManager locationManager;
     private SensorManager sensorManager;
     private Sensor accelerometer;
@@ -62,7 +59,9 @@ public class Main extends AppCompatActivity implements SensorEventListener, Loca
     private final float[] rotationMatrix = new float[9];
     private final float[] orientationAngles = new float[3];
 
-    private MotionDetector motionDetector = null;
+    // sonar
+    private DopplerDetector dopplerDetector = null;
+    public static int sonarMinimumMagnitude = 250;
     private static boolean beganGeneratingTone = false;
 
     public static WeakReference<TextView> viewWeakReference;
@@ -73,6 +72,7 @@ public class Main extends AppCompatActivity implements SensorEventListener, Loca
     }
 
     //todo: make sure to auto add permissions
+    //todo: make sure to reset volume to its original state from max
     @Override
     @SuppressLint("SetTextI18n")
     protected void onCreate(Bundle savedInstanceState) {
@@ -93,12 +93,9 @@ public class Main extends AppCompatActivity implements SensorEventListener, Loca
         sensitivitySeekBar.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
             @Override
             public void onProgressChanged(SeekBar seekBar, int progress, boolean fromUser) {
-                int newMagnitudeMin = 1000 - (100 * (progress));
                 TextView view = findViewById(R.id.sensitivityLabel);
-                int progressText = progress+1;
-                view.setText("Sensitivity (" + progressText + ")");
-                Log.i("sonar.mag", String.valueOf(newMagnitudeMin));
-                MIN_BASEBALL_MAGNITUDE = newMagnitudeMin;
+                sonarMinimumMagnitude = progress * 50;
+                view.setText("Sensitivity (" + sonarMinimumMagnitude + ")");
             }
             @Override
             public void onStartTrackingTouch(SeekBar seekBar) {
@@ -119,11 +116,11 @@ public class Main extends AppCompatActivity implements SensorEventListener, Loca
 
         if(!checkPermissions()) requestPermissions();
 
-        //todo: make sure tone is infinite, and make sure it pauses/resume with app correctly
         if (!beganGeneratingTone) {
             AudioManager audioManager = (AudioManager) getSystemService(Context.AUDIO_SERVICE);
 
             //set volume to maximum
+
             audioManager.setStreamVolume(AudioManager.STREAM_MUSIC,
                     audioManager.getStreamMaxVolume(AudioManager.STREAM_MUSIC),
             0);
@@ -135,13 +132,13 @@ public class Main extends AppCompatActivity implements SensorEventListener, Loca
     private void capture() {
         if (ActivityCompat.checkSelfPermission(this, android.Manifest.permission.RECORD_AUDIO)
                 == PackageManager.PERMISSION_GRANTED) {
-            if (motionDetector != null) {
-                motionDetector.end();
+            if (dopplerDetector != null) {
+                dopplerDetector.end();
             }
             AudioRecord recorder = new AudioRecord(AUDIO_SOURCE, SAMPLE_RATE, CHANNEL_CONFIG, AUDIO_FORMAT, BUFFER_SIZE);
-            motionDetector = new MotionDetector(recorder);
+            dopplerDetector = new DopplerDetector(recorder);
             Main.viewWeakReference.get().setText(String.valueOf(0));
-            motionDetector.start();
+            dopplerDetector.start();
         }
     }
 
@@ -152,6 +149,7 @@ public class Main extends AppCompatActivity implements SensorEventListener, Loca
             AudioRecord recorder = new AudioRecord(AUDIO_SOURCE, SAMPLE_RATE, CHANNEL_CONFIG, AUDIO_FORMAT, BUFFER_SIZE);
             Main.viewWeakReference.get().setText("calibrating...");
 
+            // todo: calibrating during a running doppler detection thread should kill it and update
             // todo: probably should find a better way to do the calibration
             Runnable calibrationTimer = () -> {
 
@@ -167,16 +165,22 @@ public class Main extends AppCompatActivity implements SensorEventListener, Loca
                 Main.INSTANCE.runOnUiThread(new Runnable() {
                     @Override
                     public void run() {
-                        Main.viewWeakReference.get().setText(String.valueOf(0));
+                        Main.viewWeakReference.get().setText("Calibrated");
                     }
                 });
-
-                Log.i("sonar.calibration", "Calibration: " + Math.round(Doppler.calibrationAngle) + "deg "
-                        + Math.round(MIN_BASEBALL_MAGNITUDE) + "mag");
             };
             Thread thread = new Thread(calibrationTimer);
             thread.start();
         }
+    }
+
+    public static void changeSpeedText(double speed) {
+        DecimalFormat df1 = new DecimalFormat("0.#");
+        Runnable r = () -> {
+            Main.viewWeakReference.get().setText(
+                    df1.format(speed));
+        };
+        Main.INSTANCE.runOnUiThread(r);
     }
 
     @Override

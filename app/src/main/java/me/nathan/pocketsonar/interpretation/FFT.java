@@ -23,7 +23,7 @@ public class FFT {
             double re = a[2 * i];
             double im = a[2 * i + 1];
             double mag = Math.sqrt(re * re + im * im);
-            double phase = Math.atan2(im, re); // Calculate the phase
+            double phase = Math.atan2(im, re);
 
             // Use the correct sample rate for calculating frequencies
             vals[0][i] = (double) sampleRate * i / (a.length / 2);
@@ -33,7 +33,6 @@ public class FFT {
 
         return vals;
     }
-
 
     public static double[] applyBlackmanHarrisWindow(short[] inputSignal, int windowLength) {
         double[] window = generateBlackmanHarrisWindow(windowLength);
