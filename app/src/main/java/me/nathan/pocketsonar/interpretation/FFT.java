@@ -5,32 +5,54 @@ import org.jtransforms.fft.DoubleFFT_1D;
 public class FFT {
 
     public static double[][] extractFrequenciesMagnitudesAndPhases(short[] sampleData, int sampleRate) {
-        // Adjust the FFT size with zero padding
-        DoubleFFT_1D fft = new DoubleFFT_1D(sampleData.length + 24 * sampleData.length);
-        double[] a = new double[(sampleData.length + 24 * sampleData.length) * 2];
+        // Determine FFT size (next power of two)
+        int fftSize = nextPowerOfTwo(sampleData.length);
+        double[] a = new double[fftSize];
 
-        // Apply the Blackman-Harris window and copy to the FFT input array
-        System.arraycopy(applyBlackmanHarrisWindow(sampleData, sampleData.length), 0, a, 0, sampleData.length);
+        // Apply the window function and copy to the FFT input array
+        double[] windowedSignal = applyBlackmanHarrisWindow(sampleData, sampleData.length);
+        System.arraycopy(windowedSignal, 0, a, 0, sampleData.length);
+        // Remaining elements in 'a' are zero (zero-padding)
 
         // Perform the FFT
+        DoubleFFT_1D fft = new DoubleFFT_1D(fftSize);
         fft.realForward(a);
 
-        // Prepare the output array to hold frequencies, magnitudes, and phases
-        double[][] vals = new double[3][a.length / 2];
+        // Prepare the output arrays
+        int numBins = fftSize / 2 + 1;
+        double[] frequencies = new double[numBins];
+        double[] magnitudes = new double[numBins];
+        double[] phases = new double[numBins];
 
-        // Calculate frequency, magnitude, and phase
-        for (int i = 0; i < a.length / 2; ++i) {
-            double re = a[2 * i];
-            double im = a[2 * i + 1];
-            double mag = Math.sqrt(re * re + im * im);
-            double phase = Math.atan2(im, re);
+        // Frequency resolution
+        double freqResolution = (double) sampleRate / fftSize;
 
-            // Use the correct sample rate for calculating frequencies
-            vals[0][i] = (double) sampleRate * i / (a.length / 2);
-            vals[1][i] = mag;
-            vals[2][i] = phase; // Store the phase in radians
+        // DC component (k = 0)
+        frequencies[0] = 0;
+        magnitudes[0] = Math.abs(a[0]); // Real part of DC component
+        phases[0] = 0; // Phase is zero for DC component
+
+        // Nyquist component (k = N/2)
+        frequencies[numBins - 1] = sampleRate / 2;
+        magnitudes[numBins - 1] = Math.abs(a[1]); // Real part of Nyquist component
+        phases[numBins - 1] = 0; // Phase is zero or undefined for Nyquist component
+
+        // For k = 1 to N/2 - 1
+        for (int k = 1; k < numBins - 1; k++) {
+            int index = 2 * k;
+            double re = a[index];
+            double im = a[index + 1];
+
+            magnitudes[k] = Math.sqrt(re * re + im * im);
+            phases[k] = Math.atan2(im, re);
+            frequencies[k] = k * freqResolution;
         }
 
+        // Return frequencies, magnitudes, and phases
+        double[][] vals = new double[3][numBins];
+        vals[0] = frequencies;
+        vals[1] = magnitudes;
+        vals[2] = phases;
         return vals;
     }
 
@@ -70,5 +92,19 @@ public class FFT {
                     - a3 * cos3;
         }
         return window;
+    }
+
+    public static int nextPowerOfTwo(int n) {
+        if (n <= 0) {
+            return 1;
+        }
+        int v = n - 1;
+        v |= v >> 1;
+        v |= v >> 2;
+        v |= v >> 4;
+        v |= v >> 8;
+        v |= v >> 16;
+        v++;
+        return v;
     }
 }
