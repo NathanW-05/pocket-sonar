@@ -3,7 +3,6 @@ package me.nathan.pocketsonar.sonar;
 import android.media.AudioRecord;
 import android.util.Log;
 
-import java.lang.reflect.Array;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.concurrent.BlockingQueue;
@@ -15,11 +14,11 @@ import me.nathan.pocketsonar.interpretation.FFT;
 
 public class DopplerDetector extends Thread {
 
-    private boolean stop = false;
+    private volatile boolean stop = false;
     private final AudioRecord recorder;
     private int currentWindowIndex = 0;
     private Thread asyncBufferProcessingThread;
-    private BlockingQueue<short[]> bufferQueue = new LinkedBlockingQueue<>();
+    private final BlockingQueue<short[]> bufferQueue = new LinkedBlockingQueue<>();
 
     public DopplerDetector(AudioRecord recorder) {
         this.recorder = recorder;
@@ -28,16 +27,21 @@ public class DopplerDetector extends Thread {
     @Override
     public void run() {
         recorder.startRecording();
+
         short[] buffer = new short[Main.BUFFER_SIZE];
 
         runAsyncBufferProcessingThread();
         while (!stop) {
-            recorder.read(buffer, 0, buffer.length);
-            int subBufferSize = Main.BUFFER_SIZE / 4; // 10ms windows
-            int stepSize = subBufferSize / 2; // 50% overlap
-            for (int i = 0; i <= buffer.length - subBufferSize; i += stepSize) {
-                short[] subBuffer = Arrays.copyOfRange(buffer, i, i + subBufferSize);
-                bufferQueue.offer(subBuffer);
+            int read = recorder.read(buffer, 0, buffer.length);
+            if (read > 0) {
+                // Divide buffer into 10 ms chunks with 50% overlap
+                int subBufferSize = (int) (Main.SAMPLE_RATE * 0.01); // 10 milliseconds
+                int stepSize = subBufferSize / 2; // 50% overlap
+
+                for (int i = 0; i <= buffer.length - subBufferSize; i += stepSize) {
+                    short[] subBuffer = Arrays.copyOfRange(buffer, i, i + subBufferSize);
+                    bufferQueue.offer(subBuffer);
+                }
             }
         }
         recorder.stop();
@@ -46,12 +50,11 @@ public class DopplerDetector extends Thread {
 
     private void runAsyncBufferProcessingThread() {
         Runnable r = () -> {
-            while (!stop) {
+            while (!stop || !bufferQueue.isEmpty()) {
                 try {
                     short[] nextSubBuffer = bufferQueue.take();
                     currentWindowIndex++;
                     extractFrequencies(nextSubBuffer);
-
                 } catch (InterruptedException e) {
                     Thread.currentThread().interrupt();
                 }
@@ -61,20 +64,21 @@ public class DopplerDetector extends Thread {
         asyncBufferProcessingThread.start();
     }
 
-    /* Below is the doppler shift frequency extraction code */
+    /* Below is the Doppler shift frequency extraction code */
 
-    ArrayList<Lead> leads = new ArrayList<>();
+    private final ArrayList<Lead> leads = new ArrayList<>();
 
     private void extractFrequencies(short[] nextSubBuffer) {
         double[][] frequencies = FFT.extractFrequenciesMagnitudesAndPhases(nextSubBuffer, Main.SAMPLE_RATE);
+
 
         for (int i = frequencies[1].length - 1; i >= 0; i--) {
             double frequency = frequencies[0][i];
             double magnitude = frequencies[1][i];
             double phase = frequencies[2][i];
 
-            if(frequency >= Main.BASE_FREQUENCY + 300) {
-                if(magnitude >= Main.sonarMinimumMagnitude) {
+            if (frequency >= Main.BASE_FREQUENCY + 400) {
+                if (magnitude >= Main.sonarMinimumMagnitude) {
                     processNextFrequency(frequency, magnitude, phase);
                 }
             }
@@ -85,70 +89,69 @@ public class DopplerDetector extends Thread {
                                       double currentMagnitude,
                                       double currentPhase) {
 
-        ArrayList<Lead> leadsToRemove = new ArrayList<>(); // avoid concurrent modification issue
-        ArrayList<Lead> possibleHits = new ArrayList<>();
-        for(Lead lead : leads) {
+        ArrayList<Lead> leadsToRemove = new ArrayList<>(); // Avoid concurrent modification
+        boolean foundMatchLead = false;
+
+        for (Lead lead : leads) {
+
             double currentSpeed = Doppler.calculateSpeedMPH(currentFrequency);
             double previousSpeed = Doppler.calculateSpeedMPH(lead.getPreviousFrequency());
-            double currentSpeedDifference = previousSpeed - currentSpeed;
-            double currentPhaseDifference = Math.abs(((currentPhase - lead.getPreviousPhase() + Math.PI) %
-                    (2 * Math.PI)) - Math.PI);
+            double currentSpeedDifference = Math.abs(Math.ceil(currentSpeed) - Math.floor(previousSpeed));
 
-            //if(currentWindowIndex - lead.getPreviousWindowIndex() == 0) continue;
+            if(lead.count < 4) {
+                if (currentWindowIndex - lead.getPreviousWindowIndex() == 0) continue;
+            }
 
-            if(currentSpeed < previousSpeed && currentWindowIndex - lead.getPreviousWindowIndex()
-                    <= 1 && currentPhase > lead.getPreviousPhase()) {
-                if(lead.count >= 2) {
-                    if (currentSpeedDifference > lead.previousSpeedDifference) { // bigger gap in decreasing speed
-                        if (currentPhaseDifference > lead.getPreviousPhaseDifference()) { // bigger gap in phase
-                            lead.update(currentFrequency, currentMagnitude, currentPhase, currentWindowIndex);
-                            lead.previousSpeedDifference = currentSpeedDifference;
-                            lead.phaseDifferences.add(currentPhaseDifference);
-                            if(lead.count >= 3) {
-                                possibleHits.add(lead);
+            if(currentWindowIndex - lead.getPreviousWindowIndex() <= 2){ // within 1 index
+                if(currentFrequency < lead.getPreviousFrequency()) { // speed decreases over time
+                    if(lead.count > 1) { // have set the first speed/phase difference
+                        if(currentSpeedDifference >= lead.getPreviousSpeedDifference()) {
+
+                            lead.update(currentFrequency, currentMagnitude, currentPhase,
+                                    currentWindowIndex, currentSpeedDifference, -1);
+
+                            if(lead.count == 4) {
+                                double originalSpeed = round(lead.speeds.get(0), 1);
+                                double speed1 = round(lead.magnitudes.get(0), 1);
+                                double speed2 = round(lead.magnitudes.get(1), 1);
+                                double speed3 = round(lead.magnitudes.get(2), 1);
+                                double speed4 = round(lead.magnitudes.get(3), 1);
+                                //double speed5 = round(lead.speeds.get(4), 1);
+                                Log.i("sonar.test",  originalSpeed + speed1 + " " +
+                                        speed2 + " " + speed3 + " " + speed4 + " " );
                                 leadsToRemove.add(lead);
                             }
+                            foundMatchLead = true;
                             continue;
                         }
+                    } else {
+                        lead.update(currentFrequency, currentMagnitude, currentPhase,
+                                currentWindowIndex, currentSpeedDifference, -1);
+                        continue;
                     }
-                    leadsToRemove.add(lead);
-                } else {
-                    lead.update(currentFrequency, currentMagnitude, currentPhase, currentWindowIndex);
-                    lead.previousSpeedDifference = currentSpeedDifference;
-                    lead.phaseDifferences.add(currentPhaseDifference);
                 }
-            } else {
-                leadsToRemove.add(lead);
             }
+            leadsToRemove.add(lead);
         }
-        leadsToRemove.forEach(lead -> leads.remove(lead));
-
-        for(Lead lead : possibleHits) {
-            double originalSpeed = round(Doppler.calculateSpeedMPH(lead.originalFrequency), 1);
-            double pd1 = round(lead.speeds.get(0), 1);
-            double pd2 = round(lead.speeds.get(1), 1);
-            double pd3 = round(lead.speeds.get(2), 1);
-            Log.i("sonar.test", "s: " + originalSpeed + "  " + pd1 + " " + pd2 + " " + pd3);
+        if(!foundMatchLead) {
+            leads.add(new Lead(currentFrequency, currentMagnitude, currentPhase, currentWindowIndex));
         }
-        possibleHits.clear();
-
-        leads.add(new Lead(currentFrequency, currentMagnitude, currentPhase, currentWindowIndex));
+        leads.removeAll(leadsToRemove);
     }
 
     public static class Lead {
         public double originalFrequency;
         public double originalMagnitude;
         public double originalPhase;
-        public double originalWindowIndex;
+        public int originalWindowIndex;
 
-        public ArrayList<Double> frequencies = new ArrayList<>();
-        public ArrayList<Double> magnitudes = new ArrayList<>();
-        public ArrayList<Double> phases = new ArrayList<>();
-        public ArrayList<Integer> windowIndexes = new ArrayList<>();
-        public ArrayList<Double> phaseDifferences = new ArrayList<>();
-        public ArrayList<Double> speeds = new ArrayList<>();
-
-        public double previousSpeedDifference = -1;
+        public final ArrayList<Double> frequencies = new ArrayList<>();
+        public final ArrayList<Double> magnitudes = new ArrayList<>();
+        public final ArrayList<Double> phases = new ArrayList<>();
+        public final ArrayList<Integer> windowIndexes = new ArrayList<>();
+        public final ArrayList<Double> phaseDifferences = new ArrayList<>();
+        public final ArrayList<Double> speeds = new ArrayList<>();
+        public final ArrayList<Double> speedDifferences = new ArrayList<>();
 
         int count = 1;
 
@@ -165,28 +168,40 @@ public class DopplerDetector extends Thread {
             speeds.add(Doppler.calculateSpeedMPH(frequency));
         }
 
-        public void update(double frequency, double magnitude, double phase, int windowIndex) {
+        public void update(double frequency, double magnitude, double phase, int windowIndex,
+                           double speedDifference, double phaseDifference) {
             frequencies.add(frequency);
             magnitudes.add(magnitude);
             phases.add(phase);
             windowIndexes.add(windowIndex);
             speeds.add(Doppler.calculateSpeedMPH(frequency));
+            speedDifferences.add(speedDifference);
+            phaseDifferences.add(phaseDifference);
             count++;
         }
+
         public double getPreviousFrequency() {
             return frequencies.get(frequencies.size() - 1);
         }
-        public double getPreviousMagnitude() {
-            return magnitudes.get(magnitudes.size() -1 );
+
+        public double getPreviousSpeedDifference() {
+            return speedDifferences.get(speedDifferences.size() -1);
         }
+
+        public double getPreviousMagnitude() {
+            return magnitudes.get(magnitudes.size() - 1);
+        }
+
         public double getPreviousPhase() {
             return phases.get(phases.size() - 1);
         }
+
         public int getPreviousWindowIndex() {
-            return windowIndexes.get(windowIndexes.size() -1);
+            return windowIndexes.get(windowIndexes.size() - 1);
         }
+
         public double getPreviousPhaseDifference() {
-            return phaseDifferences.get(phaseDifferences.size() -1);
+            return phaseDifferences.isEmpty() ? 0 : phaseDifferences.get(phaseDifferences.size() - 1);
         }
     }
 
@@ -197,5 +212,8 @@ public class DopplerDetector extends Thread {
 
     public void end() {
         this.stop = true;
+        if (asyncBufferProcessingThread != null) {
+            asyncBufferProcessingThread.interrupt();
+        }
     }
 }

@@ -1,12 +1,25 @@
 package me.nathan.pocketsonar.interpretation;
 
+import android.util.Log;
+
 import org.jtransforms.fft.DoubleFFT_1D;
 
 public class FFT {
 
     public static double[][] extractFrequenciesMagnitudesAndPhases(short[] sampleData, int sampleRate) {
-        // Determine FFT size (next power of two)
-        int fftSize = nextPowerOfTwo(sampleData.length);
+        // Determine desired time window for analysis (in seconds)
+        // You can set this to a fixed value to maintain consistent frequency resolution
+        double desiredTimeWindow = (double) sampleData.length / sampleRate; // Duration of the signal in seconds
+
+        // Calculate FFT size based on desired time window and sample rate
+        // Ensure fftSize increases when sampleRate increases
+        int fftSize = nextPowerOfTwo((int) (sampleRate * desiredTimeWindow));
+
+        // Ensure fftSize is at least as big as sampleData.length
+        if (fftSize < sampleData.length) {
+            fftSize = nextPowerOfTwo(sampleData.length);
+        }
+
         double[] a = new double[fftSize];
 
         // Apply the window function and copy to the FFT input array
@@ -72,7 +85,6 @@ public class FFT {
 
         return outputSignal;
     }
-
 
     private static double[] generateBlackmanHarrisWindow(int windowLength) {
         double[] window = new double[windowLength];
